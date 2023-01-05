@@ -1,0 +1,141 @@
+// Compile and Run:
+//    grain --release main.gr < input.txt
+// Version:
+//    grain --version
+//    0.5.7
+
+import Number from "number"
+import List from "list"
+import Map from "map"
+import String from "string"
+import Array from "array"
+import { stdin, fdRead } from "sys/file"
+import Result from "result"
+import { unwrap } from "option"
+
+let (input, _) = Result.unwrap(fdRead(stdin, 1_000_000))
+
+let executedCommands = Array.map(command =>
+  Array.toList(String.split("\n", String.trim(command))), String.split(
+  "$",
+  input
+))
+
+enum Entry {
+  File(FileEntry),
+  Directory(DirectoryEntry),
+},
+record FileEntry {
+  name: String,
+  parent: Option<DirectoryEntry>,
+  size: Number,
+},
+record DirectoryEntry {
+  name: String,
+  parent: Option<DirectoryEntry>,
+  children: Map.Map<String, Entry>,
+}
+
+let rec getSize = (entry: Entry) => {
+  match (entry) {
+    File(file) => file.size,
+    Directory(dir) => {
+      Map.reduce((size, _, entry) => size + getSize(entry), 0, dir.children)
+    },
+  }
+}
+
+let rec getAllDirs = (entry: Entry) => {
+  match (entry) {
+    File(_) => [],
+    Directory(dir) => {
+      Map.reduce((dirs, _, entry) => {
+        List.append(dirs, getAllDirs(entry))
+      }, [dir], dir.children)
+    },
+  }
+}
+
+let mut root = { name: "/", parent: None, children: Map.make() }
+
+let mut cwd = root
+
+Array.forEach(commandInDir => {
+  match (commandInDir) {
+    [] | [""] => void,
+    [command, ...results] => {
+      let commandWithArgs = String.split(" ", command)
+
+      match (commandWithArgs) {
+        [> "cd", target] => {
+          match (target) {
+            ".." => {
+              cwd = unwrap(cwd.parent)
+            },
+            "/" => {
+              cwd = root
+            },
+            _ => {
+              match (unwrap(Map.get(target, cwd.children))) {
+                Directory(dir) => {
+                  cwd = dir
+                },
+                _ => void,
+              }
+            },
+          }
+        },
+        [> "ls"] => {
+
+          List.forEach(entry => {
+            match (String.split(" ", entry)) {
+              [> "dir", name] =>
+                Map.set(
+                  name,
+                  Directory({ name, parent: Some(cwd), children: Map.make() }),
+                  cwd.children
+                ),
+              [> size, name] =>
+                Map.set(
+                  name,
+                  File(
+                    {
+                      name,
+                      parent: Some(cwd),
+                      size: Result.unwrap(Number.parse(size)),
+                    }
+                  ),
+                  cwd.children
+                ),
+              _ => void,
+            }
+          }, results)
+          void
+        },
+        _ => void,
+      }
+      void
+    },
+  }
+}, executedCommands)
+
+let allDirs = getAllDirs(Directory(root))
+let dirSizes = List.map(dir => getSize(Directory(dir)), allDirs)
+let dirsSmallerThanThreshold = List.filter(size => size <= 100_000, dirSizes)
+let sumOfRelevantDirs = List.reduce((a, b) => a + b, 0, dirsSmallerThanThreshold)
+print("Sum of the total sizes of relevant directories; Part 1: " ++ toString(sumOfRelevantDirs))
+
+
+let largestSizesFirst = List.sort((a, b) => b - a, dirSizes)
+
+let totalSpace = 70000000
+let neededFreeSpace = 30000000
+let usedSpace = unwrap(List.head(largestSizesFirst))
+let availableSpace = totalSpace - usedSpace
+let spaceToBeFreed = neededFreeSpace - availableSpace
+
+// Find the first size that is smaller than the space to be freed and take the previous one
+let indexOfSpaceToBeFreed = unwrap(List.findIndex(size => size < spaceToBeFreed, largestSizesFirst)) - 1
+
+let part2 = unwrap(List.nth(indexOfSpaceToBeFreed, largestSizesFirst))
+print("Smallest dir to be deleted to retrieve required space; Part 2: " ++ toString(part2))

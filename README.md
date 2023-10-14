@@ -53,3 +53,4 @@ Language candidates for future tasks:
 - https://github.com/buzz-language/buzz
 - https://inko-lang.org
 - https://github.com/microsoft/verona
+- https://nature-lang.org
